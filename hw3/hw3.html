@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<style>
+body {
+  overflow: hidden;
+  margin:0px;
+}
+p{
+  font-family: 'Tangerine', serif;
+  color: #ff0000;
+}
+#div_start {
+  position: fixed;
+  width: 300px;
+  background-color:rgba(0,0,0,0);
+  //background:#ffff00;
+  //padding: 10px;
+  text-align: center;
+  //color: #0000ff;
+  //visibility:hidden;
+}
+#game_sart{
+  position: fixed;
+  //top: 100px;
+  height: 50px;
+  background-color:rgba(0,0,0,0);
+  background-color: #00ff00;
+}
+#info {
+  position: absolute;
+  top: 0px;
+  width: 100%;
+  padding: 10px;
+  text-align: center;
+  color: #0000ff;
+  visibility:hidden;
+  font-size:20px;
+}
+#score{
+  position:fixed;
+  //top:0px;
+  color : #ff0000;
+  font-size:30px;
+}
+#heart{
+  position:fixed;
+  top:30px;
+  color : #ff0000;
+  font-size:30px;
+}
+#camera-x{
+  position:fixed;
+  bottom:5px;
+  width:100%;
+  color : #ff0000;
+  
+}
+#p_game_start{
+  opacity:0;
+  font-size:40px;
+}
+
+
+</style>
+</head>
+
+<body> 
+
+<audio id="audio_catch_gold"  style="none">
+<source src="https://jyunming-chen.github.io/WebAudio/kick.wav" type="audio/mpeg">
+</audio>
+<audio id="" volumn=0.1 autoplay loop style="none">
+<source src="https://chaiche.github.io/programmingGame/hw3/jay_jay.mp3" type="audio/mpeg">
+</audio>
+<audio id="audio_catch_ob"  style="none">
+<source src="https://jyunming-chen.github.io/WebAudio/snare.wav" type="audio/mpeg">
+</audio>
+
+<div id="info">
+上鍵 跳躍 （可跳兩次）<br>
+交通錐 為障礙物  不可碰
+<p id="score">score :  0</p>
+<p id="heart">heart :  4</p>
+<p id="camera-x"><p>
+</div>
+
+<div id="div_start">
+  <link rel="stylesheet" type="text/css"
+          href="https://fonts.googleapis.com/css?family=Tangerine">
+  <p id ="p_game_start">Click Here To Game Start</p>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r70/three.min.js">
+</script>
+<script src="https://dl.dropboxusercontent.com/u/3587259/Code/Threejs/OrbitControls.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+<script src="https://jyunming-chen.github.io/tutsplus/js/KeyboardState.js"></script>
+
+
+<script type="text/javascript">
+var div_start = window.document.getElementById("div_start");
+var div_style = window.getComputedStyle(div_start);
+var p_game_start = window.document.getElementById("p_game_start");
+div_start.style.left=(window.innerWidth/2-150)+"px";
+div_start.style.top=(window.innerHeight/2-25)+"px";
+
+var clock = new THREE.Clock();
+var div_opa = 0;
+
+var gameStart = false;
+var gameOver = false;
+
+$("#p_game_start").click(function() {
+  //div_start.style.visibility = "hidden";
+  window.document.getElementById("info").style.visibility = "visible";
+  //init();
+	//animate();
+  //clearInterval(it);
+  if(gameOver)
+  	window.location.reload();
+  it = setInterval(end);
+});
+
+var it = setInterval(start);
+
+function start(){
+  var dt = clock.getDelta();
+  if(p_game_start.style.opacity<1){
+    p_game_start.style.opacity = div_opa;
+    div_opa+=dt;
+    console.log(window.innerWidth);
+  }
+  else{
+    div_opa = 1;
+    clearInterval(it);
+  }
+}
+function end(){
+	var dt = clock.getDelta();
+  if(p_game_start.style.opacity>0){
+    p_game_start.style.opacity = div_opa;
+    div_opa-=dt;
+  }
+  else{
+    div_opa = 0;
+    clearInterval(it);
+    reset();
+    console.log("end");
+    p_game_start.innerHTML = "Game Over";
+  }
+}
+
+var camera, scene, renderer;
+var clock = new THREE.Clock();
+
+var keyboard = new KeyboardState();
+var planeP = new THREE.Vector3(10, 0, 0);
+var planeN = new THREE.Vector3(0, 1, 0);
+
+var camera_x;
+var grounds = [];
+var ground_number =0;
+
+var bonus = [];
+var bonus_number = 0;
+var score = 0;
+
+var obstacles = [];
+var obstacles_number = 0;
+
+function reset(){
+
+	
+	window.document.getElementById("score").innerHTML = "score :  0";
+  window.document.getElementById("heart").innerHTML = "heart :  4";
+  clock = new THREE.Clock();
+	grounds = [];
+  ground_number =0;
+
+  bonus = [];
+  bonus_number = 0;
+  score = 0;
+
+  obstacles = [];
+  obstacles_number = 0;
+	
+  
+  role = null;
+  init();
+  
+  gameOver = false;
+  
+  animate();
+  
+  
+  gameStart = true;
+  
+  
+}
+
+function togameOver(){
+	gameStart = false;
+  console.log("game over");
+  camera.position.x = -50;
+  renderer.render(scene, camera);
+  
+  it = setInterval(start);
+  gameOver = true;
+  
+}
+
+var Obstacle = function(mesh){
+	
+  this.mesh = mesh;
+  
+  this.pos = this.mesh.position;
+  
+	this.isCatch = false;
+}
+function check_catch_obstacle(pos){
+	for(var i=0;i<obstacles.length;i++){
+  	if(!obstacles[i].isCatch){
+      te = obstacles[i].pos.clone().sub(pos);
+      if(te.length()<13){
+        console.log("ob catch");
+        obstacles[i].isCatch = true;
+        window.document.getElementById("audio_catch_ob").play();
+        return true;
+      }
+    }
+  }
+}
+var Gold = function(){
+
+  this.texture = THREE.ImageUtils.loadTexture('http://i.imgur.com/Zb8eIUB.png');
+  this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), new 
+  	THREE.MeshBasicMaterial({map:this.texture,transparent: true,
+      side: THREE.DoubleSide}));
+  this.mesh.name = "gold "+ bonus_number++;
+  this.isCatch = false;
+  this.pos;
+  
+  this.rotation = 0;
+}
+Gold.prototype.setpos = function(x,y,z){
+	this.mesh.position.set(x,y,z);
+  this.pos = this.mesh.position.clone();
+}
+function check_catch_gold(pos){
+	for(var i=0;i<bonus.length;i++){
+  	if(!bonus[i].isCatch){
+      te = bonus[i].pos.clone().sub(pos);
+      if(te.length()<13){
+        bonus[i].mesh.visible = false;
+        bonus[i].isCatch = true;
+        score+=10;
+        window.document.getElementById("score").innerHTML = "score : "+score;
+        window.document.getElementById("audio_catch_gold").play();
+      }
+    }
+  }
+	
+}
+
+var Ground = function(mesh,width,height,pos){
+	this.mesh = mesh;
+  this.mesh.name = "mesh" + ground_number++;
+  console.log(this.mesh.geometry);
+  this.width = width;
+  this.height = height;
+  this.pos = pos;
+  this.pre_x =this.pos.x-this.width/2;
+  this.bef_x = this.pos.x+this.width/2;
+  this.pre_y = this.pos.y+this.height/2;
+  this.bef_y = this.pos.y-this.height/2;
+  
+ 	this.mesh.geometry.computeFaceNormals();
+  this.normal = new THREE.Vector3(0,1,0).normalize();
+}
+
+function check_which_ground(pos,image_height){
+	var tmp_ground = [];
+  for(var i=0;i<grounds.length;i++){
+  	if(grounds[i].pre_x <= pos.x && grounds[i].bef_x >= pos.x){
+    	//console.log(grounds[i].pre_y + " " + (pos.y-image_height));
+      if(grounds[i].pre_y <= (pos.y-image_height)){
+      	if(((pos.y-image_height) - grounds[i].pre_y) <= 2 ){
+          //tmp_ground.push(grounds[i]);
+          //console.log(grounds[i].mesh.name);
+          return grounds[i];
+        }
+      }
+    }
+  }
+	//return 0;
+}
+
+var RoleMesh = function(){
+		this.stArray = [];
+    this.picture_sp = 6;
+		this.setUpStArray = function () {
+      for (var i = 0; i < 2; i++) {
+        var row = [];
+        for (var j = 0; j < this.picture_sp+1; j++)
+          row.push(new THREE.Vector2(j * 1.0/this.picture_sp, 1 - 1* i));
+        this.stArray.push(row);
+      }
+    }
+    
+    this.setUpStArray();
+    
+    THREE.ImageUtils.crossOrigin = '';
+    this.texture = THREE.ImageUtils.loadTexture('http://i.imgur.com/6QPh2bF.png');
+    this.texture.wrapS = THREE.RepeatWrapping;
+    this.height =20;
+  
+    this.texMat = new THREE.MeshBasicMaterial({
+      map: this.texture,
+      transparent: true,  // cutout texture: set transparent: true
+      side: THREE.DoubleSide
+    });
+
+    this.geometry = new THREE.Geometry();
+    this.geometry.vertices.push(
+      new THREE.Vector3(-15, -15, 0),
+      new THREE.Vector3(15, -15, 0),
+      new THREE.Vector3(15, 15, 0),
+      new THREE.Vector3(-15, 15, 0)
+    );
+
+    this.face;
+    this.face = new THREE.Face3(0, 1, 2);
+    this.geometry.faces.push(this.face);
+    this.face = new THREE.Face3(0, 2, 3);
+    this.geometry.faces.push(this.face);
+
+    this.geometry.faceVertexUvs[0].push([this.stArray[1][0], this.stArray[1][1], this.stArray[0][1]]);
+    this.geometry.faceVertexUvs[0].push([this.stArray[1][0], this.stArray[0][1], this.stArray[0][0]]);
+
+    this.geometry.computeBoundingSphere();
+    this.geometry.computeFaceNormals();
+    this.geometry.computeVertexNormals();
+}
+
+var Role = function(){
+
+    this.counter = 0; 
+    
+    this.pos = new THREE.Vector3(-30, 8, 3);
+    this.npos = this.pos.clone();
+    this.vel = new THREE.Vector3(25, 0, 0);
+    this.force;
+    
+    this.isJump = true;
+    this.isdown = false;
+    this.canMove = false;
+    this.canJump = false;
+    this.canDoubleJump = false;
+    
+    this.heart = 4;
+    this.collision_count = 0;
+    this.isCollision = false;
+    
+    this.role_mesh = new RoleMesh();
+    this.mesh = new THREE.Mesh(this.role_mesh.geometry, this.role_mesh.texMat);
+    this.mesh.position.copy(this.pos);
+    
+    this.baseS = 0;
+    this.spriteAnimate = function () {
+    	if(this.isdown && !this.isJump){
+        var geometry = this.mesh.geometry;
+        var st0 = this.role_mesh.stArray[1][this.baseS];
+        var st1 = this.role_mesh.stArray[1][this.baseS + 1];
+        var st2 = this.role_mesh.stArray[0][this.baseS + 1];
+        var st3 = this.role_mesh.stArray[0][this.baseS];
+        geometry.faceVertexUvs[0] = [];
+        geometry.faceVertexUvs[0].push([st0, st1, st2]);
+        geometry.faceVertexUvs[0].push([st0, st2, st3]);
+        geometry.uvsNeedUpdate = true;
+
+        this.baseS = (this.baseS + 1) % this.role_mesh.picture_sp;
+      }
+      else{
+      
+      }
+    }
+    this.update = function(dt){
+    
+    	this.force = new THREE.Vector3(0, -90, 0);
+      if(this.vel.y>0){
+      	this.vel.add(this.force.clone().multiplyScalar(dt));
+        this.pos.add(this.vel.clone().multiplyScalar(dt));
+        this.mesh.position.copy(this.pos);
+        this.isJump = true;
+      }
+      else{
+      	var which_ground = check_which_ground(this.pos,this.role_mesh.height/2);
+      
+        if(which_ground != undefined){
+          this.pos.y = which_ground.pre_y + this.role_mesh.height/2;
+          this.vel.y = 0;
+          this.force.add(new THREE.Vector3(0, 90, 0));
+          this.vel.add(this.force.clone().multiplyScalar(dt));
+          this.pos.add(this.vel.clone().multiplyScalar(dt));
+          this.mesh.position.copy(this.pos);
+          this.canMove = true;
+       		this.canJump = true;
+          this.isJump = false;
+          this.isdown = true;
+        }
+        else{
+        	this.vel.add(this.force.clone().multiplyScalar(dt));
+          this.pos.add(this.vel.clone().multiplyScalar(dt));
+          this.mesh.position.copy(this.pos);
+          this.canMove = false;
+          this.canJump = false;
+          this.isJump = true;
+          this.isdown = false;
+        }
+      }
+      
+      if(this.pos.y<-30){
+      		togameOver();
+      }
+      
+      check_catch_gold(this.pos);
+      if(!this.isCollision && check_catch_obstacle(this.pos)){
+      	this.heart-=1;
+       	window.document.getElementById('heart').innerHTML = "heart :  "+this.heart;
+        
+      	console.log(this.heart);
+        if(this.heart==0){
+        		togameOver();
+        }
+        this.isCollision = true;
+        this.collision_count = 150;
+      }
+      else{
+      	
+        if(this.collision_count>0){
+        	if(this.collision_count%2){
+            if(this.mesh.material.opacity==1)
+              this.mesh.material.opacity = 0.5;
+            else{
+              this.mesh.material.opacity = 1;
+            }
+          }
+          this.collision_count-=1;
+          
+        }
+        else{
+        	this.mesh.material.opacity = 1;
+      		this.isCollision = false;
+        }
+      }
+      console.log(this.heart);
+    }
+}
+
+//noClickgameStart();
+function noClickgameStart(){
+  init();
+  animate();
+}
+
+function init() {
+	renderer = null;
+  renderer = new THREE.WebGLRenderer({
+    antialias: true
+  });
+  /*
+    // STATS
+  	stats = new Stats();
+  	stats.domElement.style.position = 'absolute';
+  	stats.domElement.style.top = '0px';
+  	stats.domElement.style.zIndex = 100;
+  	document.body.appendChild( stats.domElement );	
+  */
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x888888);
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.OrthographicCamera(-50, 50, 80, -20, -10, 100);
+  camera.position.z = 0;
+  scene.add(camera);
+  
+
+	THREE.ImageUtils.crossOrigin = '';
+	var texture = THREE.ImageUtils.loadTexture('http://i.imgur.com/2vvxHQe.png');
+	for (var i = 0; i < 30; i++){
+	var background = new THREE.Mesh (new THREE.PlaneGeometry (100,125), new THREE.MeshBasicMaterial({map:texture}));
+  background.position.y = 30;
+  background.position.x = -100+i*100;
+  background.position.z = -20;
+  scene.add (background);
+  }
+  
+  // what's in the scene? [depth]
+  // bordere (blue lines) [0]
+  // satellite (white circle) [1]
+  // mousePoint (red circle) [2]
+  // background (dark yellow quad) [3]
+  //
+  // all on XY plane: rely on polygonOffset to sort things out
+  // line object remains at frontmost
+
+  ////////////////////////////////////////////////////////////////////////////////////////////
+  
+
+  var ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 50), new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    visible:false,
+  }));
+  scene.add(ground);
+  ground.position.y = -25;
+  ground.position.x = 200;  // this is WRong!!!
+  
+  //grounds.push(new Ground(ground,500,50,ground.position));
+  
+  texture = THREE.ImageUtils.loadTexture('http://i.imgur.com/fWHw1cU.png');
+  
+  var ground0 = new THREE.Mesh(new THREE.PlaneGeometry(50, 15), new THREE.MeshBasicMaterial({
+    color: 0xFCFCFC,
+    //visible:false,
+    map : texture,
+    transparent:true
+  }));
+  scene.add(ground0);
+  ground0.position.y = -10;
+  ground0.position.x = -30;
+  
+  
+  grounds.push(new Ground(ground0,50,15,ground0.position));
+
+  //create other ground
+  
+  posy = [-10,-10,-10,-10,-10,
+  				5,15,-10,5,10,
+  				-10,-10,-10,-10,-10,
+          15,15,15,15,15,
+          -10,-10,-10,-10,-10,
+          0,10,15,20,25,
+          -10,-10,-10,-10,-10,
+  				5,15,-10,5,10,
+  				-10,-10,-10,-10,-10,
+          15,15,15,15,15,
+          -10,-10,-10,-10,-10,
+          0,10,15,20,25,
+          -10,-10,-10,-10,-10,
+  				5,15,-10,5,10,
+  				-10,-10,-10,-10,-10,
+          15,15,15,15,15,
+          -10,-10,-10,-10,-10,
+          0,10,15,20,25,
+          -10,-10,-10,-10,-10,
+  				5,15,-10,5,10,
+  				-10,-10,-10,-10,-10,
+          15,15,15,15,15,
+          -10,-10,-10,-10,-10,
+          0,10,15,20,25];
+  
+  
+  for(var i = 0;i<posy.length;i++){
+    var ground2 = new THREE.Mesh(new THREE.PlaneGeometry(30, 10), new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent:true
+    }));
+    ground2.position.x = 0 + i*25;
+    ground2.position.y = posy[i];
+    if(Math.random()<0.3){
+    	n = new THREE.Mesh(new THREE.PlaneGeometry(8, 15), new THREE.MeshBasicMaterial({
+      map: THREE.ImageUtils.loadTexture('http://i.imgur.com/vOO6cTT.png'),
+      transparent:true
+    }));
+      n.position.x = 0 + i*25;
+      n.position.y = posy[i]+8;
+      scene.add(n);
+      
+      obstacles.push(new Obstacle(n));
+    }
+    else{
+      for(var j = 0;j<5;j++){
+        gold = new Gold();
+        gold.setpos((ground2.position.x-10)+j*5,ground2.position.y+15,0);
+        scene.add(gold.mesh);
+        bonus.push(gold);
+      }
+    }
+    
+    scene.add(ground2);
+
+    grounds.push(new Ground(ground2,30,10,ground2.position));
+  }
+  
+  
+ 
+  /// create role
+  role = new Role();
+  scene.add(role.mesh);
+  
+  // create gold
+  
+  
+  window.addEventListener('resize', onWindowResize, false);
+ 
+ 	camera_x = document.getElementById("camera-x");
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+
+	if (++role.counter % 4 === 0)
+  	role.spriteAnimate();
+    
+  var dt = clock.getDelta();
+
+	keyboard.update();
+  
+  if(keyboard.down ('space')){
+  		gameStart = !gameStart;
+  }
+  if (keyboard.down ('up')) {
+		if(role.canDoubleJump){
+    	role.vel.y += 50;
+      role.canDoubleJump = false;
+    }
+    if(role.canJump){
+    	role.vel.y += 52;
+      role.canDoubleJump = true;
+    }
+    if(role.vel.y>60)
+    	role.vel.y =60;
+  }
+  /*
+  if (keyboard.pressed ('right')) {
+		if(role.canMove){
+    	role.mesh.rotation.y = 0;
+      if(role.vel.x < 60)
+        role.vel.x+=1;
+    }
+  }
+  */
+  /*
+  if (keyboard.pressed ('left')) {
+    if(role.canMove){
+    	role.mesh.rotation.y = -Math.PI;
+      if(role.vel.x > -60)
+          role.vel.x-=1;
+    }
+  }
+  */
+  if(gameStart){
+    role.update(dt);
+
+    for(var i=0;i<bonus.length;i++){
+      bonus[i].mesh.rotation.y += dt*1.5;
+    }
+
+    camera.position.x = role.pos.x + 30;
+
+    if(camera.position.x >= 900){
+      //camera.position.x = 900;
+    }
+    else if(camera.position.x<=0){
+      camera.position.x = 0;	
+    }
+  }
+  //camera_x.innerHTML = "camera.x = " + camera.position.x.toFixed(2);
+  if(!gameOver){
+  	requestAnimationFrame(animate);
+   
+  }
+  else{
+  camera.position.x = -100;	
+  }
+  render();
+}
+
+function render() {
+  renderer.render(scene, camera);
+}
+</script>
+
+
+
+</body>
+
+</html>

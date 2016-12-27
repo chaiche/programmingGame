@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<style>
+#info {
+  position: absolute;
+  top: 0px;
+  width: 100%;
+  padding: 10px;
+  text-align: center;
+  color: #ffff00
+}
+
+body {
+  overflow: hidden;
+}
+
+
+</style>
+</head>
+
+<body> 
+
+<div id="info">
+hw5<br>
+左下角為目標物周圍圖<br>
+方向鍵可以控制角度<br>
+如撞到防空氣球則會引爆，可以繼續發射下一個飛彈
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r78/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js">
+</script>
+<script src="https://jyunming-chen.github.io/tutsplus/js/KeyboardState.js"></script>
+<script>
+var camera, scene, renderer, controls;
+
+var keyboard = new KeyboardState();
+
+var raycaster = new THREE.Raycaster();
+var mouse = new THREE.Vector2();
+var pickables = [];
+
+var mass = 1;
+var clock = new THREE.Clock();
+
+
+
+var missiles = [];
+var obs = [];
+var ob_counter = 0;
+var texMat;
+var booms = [] ;
+
+function buildSprite(texMat) {
+
+  var geometry = new THREE.Geometry();
+  geometry.vertices.push(
+    new THREE.Vector3(-15, -15, 0),
+    new THREE.Vector3(15, -15, 0),
+    new THREE.Vector3(15, 15, 0),
+    new THREE.Vector3(-15, 15, 0)
+  );
+
+  var face;
+  face = new THREE.Face3(0, 1, 2);
+  geometry.faces.push(face);
+  face = new THREE.Face3(0, 2, 3);
+  geometry.faces.push(face);
+
+	// upper left corner
+	var uv0 = new THREE.Vector2(0.0,0.75);
+	var uv1 = new THREE.Vector2(0.125,0.75);
+	var uv2 = new THREE.Vector2(0.125,1.0);
+	var uv3 = new THREE.Vector2(0.0,1.0);
+  
+  geometry.faceVertexUvs[0].push([uv0, uv1, uv2]);
+  geometry.faceVertexUvs[0].push([uv0, uv2, uv3]);
+
+  geometry.computeBoundingSphere();
+  geometry.computeFaceNormals();
+  geometry.computeVertexNormals();
+
+  sprite = new THREE.Mesh(geometry, texMat);
+  sprite.scale.set(3,3,3);
+  return sprite;
+}
+
+var Boom = function(){
+  this.uvOffsetArray = [];
+  this.baseS = 0;
+  this.baseT = 0;
+  this.counter = 0;
+  this.sprite;
+  this.texMat = texMat.clone();
+  this.isboom = true;
+
+	this.setUpOffsetArray();
+
+  this.mesh = buildSprite(this.texMat);
+  
+  scene.add(this.mesh);
+}
+Boom.prototype.setUpOffsetArray = function(){
+	var rowCount = 4; // 4x8 sprites
+  var colCount = 8;
+  for (var i = 0; i < rowCount; i++) {
+    var row = [];
+    for (var j = 0; j < colCount; j++)
+      row.push(new THREE.Vector2(j * 0.125, - 0.25 * i));
+    this.uvOffsetArray.push(row);
+  }
+}
+Boom.prototype.spriteAnimate = function() {
+  //console.log (uvOffsetArray[baseS][baseT]);
+  
+	this.mesh.material.map.offset.copy (this.uvOffsetArray[this.baseS][this.baseT]);  
+  this.baseT = (this.baseT + 1) % 8;
+  if (this.baseT === 0) {
+    this.baseS = (this.baseS + 1) % 4;
+  }
+  if(this.baseS ==3){
+ 
+    if(this.baseT ==7){
+      this.isboom =false;
+      scene.remove(this.mesh);
+      booms.pop(this);
+      
+      for(var i=0;i<1;i++){
+        missiles.push(new Missile());
+        missiles[i].target.copy(puck.position);
+        //missiles[i].pos.copy(new THREE.Vector3(i*50,0,0));
+        missiles[i].pos.copy(new THREE.Vector3(-150,0,-150));
+        missiles[i].mesh.rotation.y = -Math.PI/4;
+        missiles[i].mesh.position.copy(missiles[i].pos);
+        //missiles[i].mesh.rotation.z = 0.8;
+        scene.add(missiles[i].mesh);
+      }
+      
+    }
+  }
+}
+Boom.prototype.update = function(){
+	this.counter++;
+  if(this.mesh!==undefined)
+  	this.mesh.lookAt (camera.position);
+  
+  if (this.counter % 8 === 0 && this.isboom)
+    this.spriteAnimate();
+}
+
+var Ob = function(){
+
+	this.obRad = 10;
+	this.mesh = new THREE.Mesh (new THREE.SphereGeometry (this.obRad,20,20),
+  new THREE.MeshNormalMaterial({wireframe:true}));
+  this.pos = new THREE.Vector3();
+  this.name = "Ob:"+ob_counter;
+  ob_counter++;
+  
+  this.boom = false;
+
+}
+Ob.prototype.setPosition = function(x,y,z){
+	this.mesh.position.set(x,y,z);
+  this.pos.copy(this.mesh.position);
+}
+
+
+var Missile = function(){
+
+		this.mesh = buildPlane();
+		this.pos = new THREE.Vector3(0,0,0);
+  	this.vel = new THREE.Vector3(0,0,0);
+  	this.force = new THREE.Vector3(0,0,0);
+    this.tmpvel = new THREE.Vector3(0,0,0);
+    
+    this.target = new THREE.Vector3();
+    this.maxSpeed = 100;
+    this.maxForce = 50;
+    this.angle = 0;
+    
+    this.closeob = null;
+    
+    this.fire = false;
+
+}
+
+Missile.prototype.computeForce = function(){
+	this.force = this.target.clone().sub(this.pos).setLength(this.maxSpeed).sub(this.vel);
+
+  // collision avoidance
+  // (for each obstacle)
+  
+  for(var i=0;i<obs.length;i++){
+    this.closeob = obs[i];
+    if(this.closeob!=null){
+    	if(this.closeob.pos.distanceTo(this.pos)<this.closeob.obRad+3){
+      
+      		console.log("ob boom");
+          
+          if(!this.closeob.boom){
+            scene.remove(this.mesh);
+            scene.remove(this.closeob.mesh);
+            missiles.pop(this);
+            var boom = new Boom(texMat);
+            boom.mesh.position.copy(this.pos);
+          	booms.push(boom);
+            this.closeob.boom = true;
+            return false;
+          }  
+      }
+      
+      var tmp = this.closeob.pos.clone().sub(this.pos);
+      var tmpProj = tmp.clone().projectOnVector(this.vel);
+
+      if (tmp.dot(this.vel) > 0) {
+        if (tmpProj.clone().sub(tmp).length() < this.closeob.obRad + 3) {
+
+          if (tmpProj.length() < 5 * this.vel.length()) {
+            console.log('block & close');
+            this.force.add(tmpProj.clone().sub(tmp).multiplyScalar(2));
+          }
+        }
+      }
+      
+    }
+  }
+  
+  
+  return true;
+}
+
+Missile.prototype.update = function(dt){
+	
+  if(this.fire){
+    var distance = 10000;
+    this.closeob = null;
+    for(var i=0;i<obs.length;i++){
+        if(obs[i].pos.distanceTo(this.pos)<distance){
+          distance = obs[i].pos.distanceTo(this.pos);
+          this.closeob  = obs[i];
+        }  
+    }
+    //console.log(this.closeob.name);
+    if(!this.computeForce()){
+      return;
+    }
+    if (this.force.length() > this.maxForce)
+      this.force.setLength(this.maxForce);
+    this.vel.add(this.force.clone().multiplyScalar(dt / mass));
+    if (this.vel.length() > this.maxSpeed)
+      this.vel.setLength(this.maxSpeed);
+    this.pos.add(this.vel.clone().multiplyScalar(dt));
+
+    if (this.vel.length() > 0.001) {
+      this.angle = Math.atan2(-this.vel.z, this.vel.x);
+    }
+
+    if(this.pos.distanceTo(this.target)<3){
+      console.log("boom");
+      missiles.pop(this);
+      scene.remove(this.mesh);
+      scene.remove(puck);
+      var boom = new Boom(texMat);
+      boom.mesh.position.copy(this.pos);
+      booms.push(boom);
+      return;
+    }
+
+    // set orientation
+    var localX = this.vel.clone().normalize();
+    var localY = new THREE.Vector3(0, 1, 0);
+    var tmp = localY.clone().projectOnVector(localX);
+    localY.sub(tmp).normalize();
+    var localZ = new THREE.Vector3();
+    localZ.crossVectors(localX, localY);
+
+    this.mesh.matrix.makeBasis(localX, localY, localZ);
+    this.mesh.matrix.setPosition(this.pos);
+    this.mesh.matrixAutoUpdate = false;
+  }
+  
+  
+}
+
+init();
+animate();
+
+
+
+function buildPlane() {
+  var plane = new THREE.Object3D();
+
+  var geometry = new THREE.Geometry();
+  geometry.vertices.push(new THREE.Vector3(30, 0, 0));
+  geometry.vertices.push(new THREE.Vector3(0, 10, 0));
+  geometry.vertices.push(new THREE.Vector3(0, 0, 10));
+  geometry.vertices.push(new THREE.Vector3(0, 0, -10));
+  var face;
+  face = new THREE.Face3(0, 1, 2);
+  geometry.faces.push(face);
+  face = new THREE.Face3(1, 3, 2);
+  geometry.faces.push(face);
+  face = new THREE.Face3(3, 1, 0);
+  geometry.faces.push(face);
+  face = new THREE.Face3(2, 3, 0);
+  geometry.faces.push(face);
+
+  geometry.computeBoundingSphere();
+  geometry.computeFaceNormals();
+  geometry.computeVertexNormals();
+
+  mesh = new THREE.Mesh(geometry, new THREE.MeshNormalMaterial({
+    wireframe: false
+  }));
+  plane.add(mesh);
+
+  return plane;
+}
+
+function init() {
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
+  camera.position.z = 500;
+  scene.add(camera);
+  
+  camera2 = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
+  camera2.position.z = 500;
+  scene.add(camera2);
+  
+
+  /*
+    // add my cylinder
+    var geometry = new THREE.BoxGeometry(15, 2, 5);
+    var material = new THREE.MeshNormalMaterial();
+    vehicle = new THREE.Mesh(geometry, material);
+    scene.add(vehicle);
+  */
+  var gridXZ = new THREE.GridHelper(200, 20, 'red', 'white');
+  
+
+  
+  
+  scene.add(gridXZ);
+
+  renderer = new THREE.WebGLRenderer();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x888888);
+	renderer.autoClear = false;
+  
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+  //////////////////////
+  
+  for(var i=0;i<50;i++){
+    var ob = new Ob();
+    ob.setPosition((Math.random() * 300)-150,(Math.random() * 100)+10,(Math.random() * 300)-150);
+    obs.push(ob);
+    scene.add (ob.mesh);
+  }
+  
+  
+  puck = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 2, 20), new THREE.MeshNormalMaterial());
+  puck.position.set(100,0,100);
+  scene.add(puck);
+  
+  for(var i=0;i<1;i++){
+    missiles.push(new Missile());
+    missiles[i].target.copy(puck.position);
+    //missiles[i].pos.copy(new THREE.Vector3(i*50,0,0));
+    missiles[i].pos.copy(new THREE.Vector3(-150,0,-150));
+    missiles[i].mesh.rotation.y = -Math.PI/4;
+    missiles[i].mesh.position.copy(missiles[i].pos);
+    //missiles[i].mesh.rotation.z = 0.8;
+    scene.add(missiles[i].mesh);
+  }
+  
+  
+
+  document.body.appendChild(renderer.domElement);
+
+  
+ 
+  // instantiate a loader
+  var loader = new THREE.TextureLoader();
+
+  // load a resource
+  loader.load(
+    // resource URL
+    'https://i.imgur.com/6ePTx6p.png',
+
+    // Function when resource is loaded
+    function(texture) {
+      // Plane with default texture coordinates [0,1]x[0,1]
+      texMat = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true, // cutout texture: set transparent: true
+        side: THREE.DoubleSide
+      });
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      
+      //scene.add(buildSprite(texMat));
+    },
+    // Function called when download progresses
+    function(xhr) {
+      console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+    },
+    // Function called when download errors
+    function(xhr) {
+      console.log('An error happened');
+    }
+  );
+  
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshBasicMaterial({color:0x64A600,side:THREE.DoubleSide}) );
+  
+  plane.rotation.x = -Math.PI/2;
+  scene.add(plane);
+  
+  pickables = [plane];
+  //document.addEventListener('mousedown', onDocumentMouseDown, false);
+}
+function onDocumentMouseDown(event) {
+  event.preventDefault();
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  // find intersections
+  raycaster.setFromCamera(mouse, camera);
+  var intersects = raycaster.intersectObjects(pickables);
+  if (intersects.length > 0) {
+    puck.position.copy(intersects[0].point);
+    
+    for(var i =0;i<missiles.length;i++){
+  		missiles[i].target.copy(puck.position);
+  	}
+  }
+
+}
+
+function animate() {
+	controls.update();
+  
+  keyboard.update();
+  if (keyboard.down("space")) {
+  		missiles[0].fire =true;
+      missiles[0].vel = missiles[0].tmpvel.clone().setLength((missiles[0].tmpvel.x+missiles[0].tmpvel.y+missiles[0].tmpvel.z)*5);
+  }
+  if(keyboard.pressed("right")){
+  	if(!missiles[0].fire)
+      if(missiles[0].mesh.rotation.y>-Math.PI/2){
+        missiles[0].mesh.rotation.y-=0.03;
+        missiles[0].tmpvel.z+=1;
+        if(missiles[0].mesh.rotation.y<-0.78){
+        	missiles[0].tmpvel.x = 0;
+        }
+      }
+  }
+  if(keyboard.pressed("left")){
+  	if(!missiles[0].fire)
+      if(missiles[0].mesh.rotation.y<0){
+        missiles[0].mesh.rotation.y+=0.03;
+        missiles[0].tmpvel.x+=1;
+        if(missiles[0].mesh.rotation.y>-0.78){
+        	missiles[0].tmpvel.z = 0;
+        }
+      }
+    //console.log(missiles[0].mesh.rotation.y);
+  }
+  if(keyboard.pressed("up")){
+  	if(!missiles[0].fire){
+      if(missiles[0].mesh.rotation.z<0.6){
+        missiles[0].mesh.rotation.z+=0.03;
+        missiles[0].tmpvel.y+=1;
+      }
+    }
+    //console.log(missiles[0].vel.y);
+  }
+  if(keyboard.pressed("down")){
+  	if(!missiles[0].fire){
+      if(missiles[0].mesh.rotation.z>0){
+        missiles[0].mesh.rotation.z-=0.03;
+        missiles[0].tmpvel.y-=1;
+      }
+      else{
+      missiles[0].tmpvel.y=0;
+      }
+    }
+    //console.log(missiles[0].mesh.rotation.z);
+  }
+  
+  var dt = clock.getDelta(); // delta-time
+  
+	for(var i =0;i<missiles.length;i++){
+  
+  	missiles[i].update(dt);
+  }
+  
+  for(var i =0;i<booms.length;i++){
+  	booms[i].update();
+  }
+  if(missiles.length>0){
+    var c = missiles[0].mesh.localToWorld(new THREE.Vector3(-100,50,0));
+    camera.position.copy(c);
+    camera.lookAt(missiles[0].mesh.localToWorld(new THREE.Vector3()));
+  }
+  else{
+  	camera.position.set(0,400,400);
+  }
+  var sd = puck.localToWorld(new THREE.Vector3(0,200,0));
+  camera2.position.copy(sd.clone());
+  camera2.lookAt(puck.localToWorld(new THREE.Vector3()));
+  requestAnimationFrame(animate);
+  render();
+}
+
+function render() {
+	var WW = window.innerWidth;
+  var HH = window.innerHeight;
+  renderer.enableScissorTest(true);
+  
+  renderer.setViewport(0, HH/4, WW, HH-HH / 4);
+  renderer.setScissor(0, 0, WW, HH);
+  renderer.clear();
+  renderer.render(scene, camera);
+  
+  renderer.setViewport(0, 0, WW / 4,  HH / 4);
+  renderer.setScissor(0, 0, WW/4, HH/4);
+  //renderer.clear();
+  renderer.render(scene, camera2);
+  
+  renderer.enableScissorTest(false);
+} 
+
+
+</script>
+
+</body>
+
+</html>
